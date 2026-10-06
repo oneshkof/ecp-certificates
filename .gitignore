@@ -1,0 +1,24 @@
+# Build output
+bin/
+obj/
+
+# Local database (создаётся приложением)
+*.db
+*.db-shm
+*.db-wal
+
+# Локальные настройки (токен Telegram-бота и т.п.)
+notification-settings.json
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# ReSharper
+_ReSharper*/
+*.DotSettings.user
+
+# OS
+Thumbs.db
+.DS_Store
