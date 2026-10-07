@@ -12,6 +12,8 @@ namespace WindowsFormsApp1.Forms
         private readonly bool _isNew;
         private TextBox _txtFullName;
         private ComboBox _cmbDepartment;
+        private ComboBox _cmbAuthority;
+        private ComboBox _cmbType;
         private TextBox _txtSerial;
         private TextBox _txtLogin;
         private TextBox _txtStorePassword;
@@ -21,26 +23,28 @@ namespace WindowsFormsApp1.Forms
         private TextBox _txtComment;
         private TextBox _txtTelegramUsername;
         private TextBox _txtTelegramChatId;
+        private CheckBox _chkShowPasswords;
 
         public Certificate Result { get; private set; }
 
-        public CertificateEditForm(Certificate certificate, List<string> departments)
+        public CertificateEditForm(Certificate certificate, List<string> departments,
+            List<string> authorities, List<string> certificateTypes)
         {
             _isNew = certificate == null;
             _certificate = certificate ?? new Certificate();
             Text = _isNew ? "Новая запись ЭЦП" : "Редактирование записи ЭЦП";
-            Width = 500;
-            Height = 580;
+            Width = 520;
+            Height = 640;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
             MinimizeBox = false;
             Font = new Font("Segoe UI", 9F);
-            BuildUi(departments);
+            BuildUi(departments, authorities, certificateTypes);
             LoadValues();
         }
 
-        private void BuildUi(List<string> departments)
+        private void BuildUi(List<string> departments, List<string> authorities, List<string> certificateTypes)
         {
             var layout = new TableLayoutPanel
             {
@@ -52,19 +56,34 @@ namespace WindowsFormsApp1.Forms
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             _txtFullName = new TextBox { Dock = DockStyle.Fill };
-            _cmbDepartment = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDown };
-            _cmbDepartment.Items.AddRange(departments.ToArray());
+            _cmbDepartment = CreateCombo(departments);
+            _cmbAuthority = CreateCombo(authorities);
+            _cmbType = CreateCombo(certificateTypes);
             _txtSerial = new TextBox { Dock = DockStyle.Fill };
             _txtLogin = new TextBox { Dock = DockStyle.Fill };
-            _txtStorePassword = new TextBox { Dock = DockStyle.Fill };
-            _txtCertPassword = new TextBox { Dock = DockStyle.Fill };
+            _txtStorePassword = new TextBox { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
+            _txtCertPassword = new TextBox { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
             _dtIssue = new DateTimePicker { Dock = DockStyle.Fill, Format = DateTimePickerFormat.Short };
             _dtExpiry = new DateTimePicker { Dock = DockStyle.Fill, Format = DateTimePickerFormat.Short };
             _txtComment = new TextBox { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical };
             _txtTelegramUsername = new TextBox { Dock = DockStyle.Fill, PlaceholderText = "@username" };
             _txtTelegramChatId = new TextBox { Dock = DockStyle.Fill, PlaceholderText = "числовой ID (необязательно)" };
+            _chkShowPasswords = new CheckBox
+            {
+                Text = "Показать пароли",
+                AutoSize = true,
+                Margin = new Padding(0, 4, 0, 0)
+            };
+            _chkShowPasswords.CheckedChanged += (s, e) =>
+            {
+                _txtStorePassword.UseSystemPasswordChar = !_chkShowPasswords.Checked;
+                _txtCertPassword.UseSystemPasswordChar = !_chkShowPasswords.Checked;
+            };
+
             AddRow(layout, "ФИО сотрудника:", _txtFullName);
             AddRow(layout, "Подразделение:", _cmbDepartment);
+            AddRow(layout, "Удостоверяющий центр:", _cmbAuthority);
+            AddRow(layout, "Тип сертификата:", _cmbType);
             AddRow(layout, "Серийный номер:", _txtSerial);
             AddRow(layout, "Логин к хранилищу:", _txtLogin);
             AddRow(layout, "Пароль к хранилищу:", _txtStorePassword);
@@ -74,6 +93,7 @@ namespace WindowsFormsApp1.Forms
             AddRow(layout, "Telegram сотрудника:", _txtTelegramUsername);
             AddRow(layout, "Telegram Chat ID:", _txtTelegramChatId);
             AddRowTall(layout, "Комментарий:", _txtComment);
+            AddRow(layout, "", _chkShowPasswords);
 
             var buttons = new FlowLayoutPanel
             {
@@ -87,10 +107,21 @@ namespace WindowsFormsApp1.Forms
             btnSave.Click += OnSaveClick;
             buttons.Controls.Add(btnCancel);
             buttons.Controls.Add(btnSave);
+
             Controls.Add(layout);
             Controls.Add(buttons);
             AcceptButton = btnSave;
             CancelButton = btnCancel;
+        }
+
+        private static ComboBox CreateCombo(List<string> items)
+        {
+            var combo = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDown };
+            if (items != null)
+            {
+                combo.Items.AddRange(items.ToArray());
+            }
+            return combo;
         }
 
         private static void AddRow(TableLayoutPanel layout, string label, Control control)
@@ -114,6 +145,8 @@ namespace WindowsFormsApp1.Forms
         {
             _txtFullName.Text = _certificate.FullName;
             _cmbDepartment.Text = _certificate.Department;
+            _cmbAuthority.Text = _certificate.Authority;
+            _cmbType.Text = _certificate.CertificateType;
             _txtSerial.Text = _certificate.SerialNumber;
             _txtLogin.Text = _certificate.StoreLogin;
             _txtStorePassword.Text = _certificate.StorePassword;
@@ -154,6 +187,8 @@ namespace WindowsFormsApp1.Forms
                 Id = _certificate.Id,
                 FullName = _txtFullName.Text.Trim(),
                 Department = _cmbDepartment.Text.Trim(),
+                Authority = _cmbAuthority.Text.Trim(),
+                CertificateType = _cmbType.Text.Trim(),
                 SerialNumber = _txtSerial.Text.Trim(),
                 StoreLogin = _txtLogin.Text.Trim(),
                 StorePassword = _txtStorePassword.Text,

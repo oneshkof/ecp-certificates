@@ -215,10 +215,10 @@ CREATE INDEX IF NOT EXISTS IX_Requests_Status ON Requests(RequestStatusId);
 
             SeedLookup(connection, "CertificateAuthorities", new[]
             {
-                "ФНС России",
-                "Федеральное казначейство",
-                "АО «Аналитический центр»",
-                "УЦ Сбербанка"
+                "РУП «Информационно-издательский центр по налогам и сборам»",
+                "Национальный центр электронных услуг",
+                "ОАО «Банковский процессинговый центр»",
+                "Республиканский удостоверяющий центр"
             });
 
             SeedLookup(connection, "CertificateTypes", new[]

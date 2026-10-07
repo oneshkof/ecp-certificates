@@ -8,6 +8,8 @@ namespace WindowsFormsApp1.Models
 
         public string FullName { get; set; } = "";
         public string Department { get; set; } = "";
+        public string Authority { get; set; } = "";
+        public string CertificateType { get; set; } = "";
         public string SerialNumber { get; set; } = "";
         public string StoreLogin { get; set; } = "";
         public string StorePassword { get; set; } = "";
@@ -19,5 +21,15 @@ namespace WindowsFormsApp1.Models
         public string TelegramChatId { get; set; } = "";
         public string NotifiedThresholds { get; set; } = "";
         public int DaysLeft => (ExpiryDate.Date - DateTime.Today).Days;
+
+        public string Status
+        {
+            get
+            {
+                if (DaysLeft < 0) return "Просрочен";
+                if (DaysLeft <= 30) return "Истекает";
+                return "Действует";
+            }
+        }
     }
 }

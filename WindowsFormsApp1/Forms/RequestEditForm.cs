@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using WindowsFormsApp1.Models;
@@ -9,20 +10,23 @@ namespace WindowsFormsApp1.Forms
     {
         private readonly Request _request;
         private readonly bool _isNew;
+        private readonly List<string> _statuses;
         private TextBox _txtFullName;
         private TextBox _txtNumber;
         private ComboBox _cmbType;
+        private ComboBox _cmbStatus;
         private DateTimePicker _dtCreated;
 
         public Request Result { get; private set; }
 
-        public RequestEditForm(Request request)
+        public RequestEditForm(Request request, List<string> statuses)
         {
             _isNew = request == null;
             _request = request ?? new Request();
+            _statuses = statuses ?? new List<string>();
             Text = _isNew ? "Новая заявка" : "Редактирование заявки";
             Width = 440;
-            Height = 300;
+            Height = 340;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -50,10 +54,20 @@ namespace WindowsFormsApp1.Forms
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
             _cmbType.Items.AddRange(RequestTypes.All);
+            _cmbStatus = new ComboBox
+            {
+                Dock = DockStyle.Fill,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            if (_statuses.Count > 0)
+            {
+                _cmbStatus.Items.AddRange(_statuses.ToArray());
+            }
             _dtCreated = new DateTimePicker { Dock = DockStyle.Fill, Format = DateTimePickerFormat.Short };
             AddRow(layout, "ФИО сотрудника:", _txtFullName);
             AddRow(layout, "Номер заявки:", _txtNumber);
             AddRow(layout, "Тип получения:", _cmbType);
+            AddRow(layout, "Статус:", _cmbStatus);
             AddRow(layout, "Дата создания:", _dtCreated);
 
             var buttons = new FlowLayoutPanel
@@ -92,6 +106,14 @@ namespace WindowsFormsApp1.Forms
             {
                 _cmbType.SelectedIndex = 0;
             }
+            if (!string.IsNullOrEmpty(_request.Status))
+            {
+                _cmbStatus.SelectedItem = _request.Status;
+            }
+            if (_cmbStatus.SelectedIndex < 0 && _cmbStatus.Items.Count > 0)
+            {
+                _cmbStatus.SelectedIndex = 0;
+            }
             if (_request.CreatedDate != default)
             {
                 _dtCreated.Value = _request.CreatedDate;
@@ -122,6 +144,7 @@ namespace WindowsFormsApp1.Forms
                 FullName = _txtFullName.Text.Trim(),
                 RequestNumber = _txtNumber.Text.Trim(),
                 RequestType = _cmbType.SelectedItem?.ToString() ?? RequestTypes.New,
+                Status = _cmbStatus.SelectedItem?.ToString() ?? "",
                 CreatedDate = _dtCreated.Value.Date
             };
             DialogResult = DialogResult.OK;

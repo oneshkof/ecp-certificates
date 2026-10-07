@@ -17,6 +17,7 @@ namespace WindowsFormsApp1.Models
         public string FullName { get; set; } = "";
         public string RequestNumber { get; set; } = "";
         public string RequestType { get; set; } = RequestTypes.New;
+        public string Status { get; set; } = "";
         public DateTime CreatedDate { get; set; } = DateTime.Today;
     }
 }

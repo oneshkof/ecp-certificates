@@ -15,9 +15,10 @@ namespace WindowsFormsApp1.Data
             using var connection = Database.OpenConnection();
             using var command = connection.CreateCommand();
             command.CommandText = @"
-SELECT Id, FullName, RequestNumber, RequestType, CreatedDate
-FROM Requests
-ORDER BY Id DESC;";
+SELECT r.Id, r.FullName, r.RequestNumber, r.RequestType, IFNULL(s.Name, '') AS Status, r.CreatedDate
+FROM Requests r
+LEFT JOIN RequestStatuses s ON s.Id = r.RequestStatusId
+ORDER BY r.Id DESC;";
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
@@ -31,9 +32,9 @@ ORDER BY Id DESC;";
             using var connection = Database.OpenConnection();
             using var command = connection.CreateCommand();
             command.CommandText = @"
-INSERT INTO Requests (FullName, RequestNumber, RequestType, CreatedDate)
-VALUES ($fullName, $number, $type, $created);";
-            AddParameters(command, request);
+INSERT INTO Requests (FullName, RequestNumber, RequestType, RequestStatusId, CreatedDate)
+VALUES ($fullName, $number, $type, $statusId, $created);";
+            AddParameters(connection, command, request);
             command.ExecuteNonQuery();
             using var idCommand = connection.CreateCommand();
             idCommand.CommandText = "SELECT last_insert_rowid();";
@@ -49,9 +50,10 @@ UPDATE Requests SET
     FullName      = $fullName,
     RequestNumber = $number,
     RequestType   = $type,
+    RequestStatusId = $statusId,
     CreatedDate   = $created
 WHERE Id = $id;";
-            AddParameters(command, request);
+            AddParameters(connection, command, request);
             command.Parameters.AddWithValue("$id", request.Id);
             command.ExecuteNonQuery();
         }
@@ -75,12 +77,55 @@ WHERE Id = $id;";
             return Convert.ToInt64(command.ExecuteScalar()) > 0;
         }
 
-        private static void AddParameters(SqliteCommand command, Request request)
+        public List<string> GetStatuses()
         {
+            var result = new List<string>();
+            using var connection = Database.OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT Name FROM RequestStatuses ORDER BY Id;";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                result.Add(reader.GetString(0));
+            }
+            return result;
+        }
+
+        private static void AddParameters(SqliteConnection connection, SqliteCommand command, Request request)
+        {
+            long statusId = GetOrCreateStatusId(connection, request.Status);
             command.Parameters.AddWithValue("$fullName", (object)request.FullName ?? DBNull.Value);
             command.Parameters.AddWithValue("$number", (object)request.RequestNumber ?? DBNull.Value);
             command.Parameters.AddWithValue("$type", (object)request.RequestType ?? DBNull.Value);
+            command.Parameters.AddWithValue("$statusId", statusId == 0 ? (object)DBNull.Value : statusId);
             command.Parameters.AddWithValue("$created", request.CreatedDate.ToString(DateFormat));
+        }
+
+        private static long GetOrCreateStatusId(SqliteConnection connection, string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return 0;
+            }
+
+            using (var find = connection.CreateCommand())
+            {
+                find.CommandText = "SELECT Id FROM RequestStatuses WHERE Name = $name;";
+                find.Parameters.AddWithValue("$name", name.Trim());
+                var found = find.ExecuteScalar();
+                if (found != null)
+                {
+                    return Convert.ToInt64(found);
+                }
+            }
+
+            using var insert = connection.CreateCommand();
+            insert.CommandText = "INSERT INTO RequestStatuses (Name) VALUES ($name);";
+            insert.Parameters.AddWithValue("$name", name.Trim());
+            insert.ExecuteNonQuery();
+            using var idCommand = connection.CreateCommand();
+            idCommand.CommandText = "SELECT last_insert_rowid();";
+            return Convert.ToInt64(idCommand.ExecuteScalar());
         }
 
         private static Request Map(SqliteDataReader reader)
@@ -91,7 +136,8 @@ WHERE Id = $id;";
                 FullName = reader.GetString(1),
                 RequestNumber = reader.GetString(2),
                 RequestType = reader.GetString(3),
-                CreatedDate = DateTime.TryParse(reader.GetString(4), out var d) ? d : DateTime.Today
+                Status = reader.IsDBNull(4) ? "" : reader.GetString(4),
+                CreatedDate = DateTime.TryParse(reader.GetString(5), out var d) ? d : DateTime.Today
             };
         }
     }

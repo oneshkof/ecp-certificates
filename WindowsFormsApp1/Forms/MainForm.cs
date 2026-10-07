@@ -17,17 +17,20 @@ namespace WindowsFormsApp1.Forms
         private DataTable _certificatesTable;
         private DataTable _requestsTable;
         private ToolStripStatusLabel _certStatusLabel;
+        private ToolStripStatusLabel _requestStatusLabel;
+        private TextBox _txtSearch;
+        private ComboBox _cmbFilter;
         private readonly Timer _notifyTimer = new Timer();
         private NotificationSettings _notificationSettings;
 
         public MainForm()
         {
             Text = "Учёт сертификатов ЭЦП";
-            Width = 1100;
-            Height = 650;
+            Width = 1280;
+            Height = 680;
+            MinimumSize = new Size(900, 520);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9F);
-            MinimumSize = new Size(800, 500);
             BuildUi();
             LoadCertificates();
             LoadRequests();
@@ -90,7 +93,8 @@ namespace WindowsFormsApp1.Forms
                 MultiSelect = false,
                 RowHeadersVisible = false,
                 BackgroundColor = Color.White,
-                BorderStyle = BorderStyle.None
+                BorderStyle = BorderStyle.None,
+                EnableHeadersVisualStyles = false
             };
         }
 
@@ -103,9 +107,9 @@ namespace WindowsFormsApp1.Forms
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Padding = new Padding(8)
+                Padding = new Padding(8, 8, 8, 4)
             };
-            var btnAdd = new Button { Text = "Добавить", Width = 110 };
+            var btnAdd = new Button { Text = "Добавить", Width = 105 };
             var btnEdit = new Button { Text = "Редактировать", Width = 120 };
             var btnDelete = new Button { Text = "Удалить", Width = 100 };
             var btnCheck = new Button { Text = "Проверить сейчас", Width = 140 };
@@ -127,12 +131,31 @@ namespace WindowsFormsApp1.Forms
                 btnAdd, btnEdit, btnDelete, btnCheck, btnSendNow, btnNotifications, btnRefresh, btnExport
             });
 
+            // Строка поиска и фильтра.
+            var filterBar = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(8, 0, 8, 4)
+            };
+            var lblSearch = new Label { Text = "Поиск:", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(0, 6, 0, 0) };
+            _txtSearch = new TextBox { Width = 240, PlaceholderText = "ФИО, подразделение или № сертификата" };
+            _txtSearch.TextChanged += (s, e) => ApplyCertificateFilter();
+            var lblFilter = new Label { Text = "Показать:", AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(12, 6, 0, 0) };
+            _cmbFilter = new ComboBox { Width = 180, DropDownStyle = ComboBoxStyle.DropDownList };
+            _cmbFilter.Items.AddRange(new object[] { "Все записи", "Только истекающие", "Только просроченные" });
+            _cmbFilter.SelectedIndex = 0;
+            _cmbFilter.SelectedIndexChanged += (s, e) => ApplyCertificateFilter();
+            filterBar.Controls.AddRange(new Control[] { lblSearch, _txtSearch, lblFilter, _cmbFilter });
+
             // Строка состояния снизу.
             var statusStrip = new StatusStrip { SizingGrip = false };
             _certStatusLabel = new ToolStripStatusLabel { Text = "Всего сотрудников: 0" };
             statusStrip.Items.Add(_certStatusLabel);
             panel.Controls.Add(_gridCertificates);
             panel.Controls.Add(statusStrip);
+            panel.Controls.Add(filterBar);
             panel.Controls.Add(toolbar);
             return panel;
         }
@@ -159,7 +182,13 @@ namespace WindowsFormsApp1.Forms
             btnRefresh.Click += (s, e) => LoadRequests();
             btnExport.Click += (s, e) => ExportRequests();
             toolbar.Controls.AddRange(new Control[] { btnAdd, btnEdit, btnDelete, btnRefresh, btnExport });
+
+            var statusStrip = new StatusStrip { SizingGrip = false };
+            _requestStatusLabel = new ToolStripStatusLabel { Text = "Всего заявок: 0" };
+            statusStrip.Items.Add(_requestStatusLabel);
+
             panel.Controls.Add(_gridRequests);
+            panel.Controls.Add(statusStrip);
             panel.Controls.Add(toolbar);
             return panel;
         }
@@ -168,65 +197,84 @@ namespace WindowsFormsApp1.Forms
 
         private void LoadCertificates()
         {
-            _certificatesTable = new DataTable();
-            _certificatesTable.Columns.Add("Id", typeof(long));
-            _certificatesTable.Columns.Add("ФИО", typeof(string));
-            _certificatesTable.Columns.Add("Подразделение", typeof(string));
-            _certificatesTable.Columns.Add("№ сертификата", typeof(string));
-            _certificatesTable.Columns.Add("Логин к хранилищу", typeof(string));
-            _certificatesTable.Columns.Add("Пароль к хранилищу", typeof(string));
-            _certificatesTable.Columns.Add("Пароль от ЭЦП", typeof(string));
-            _certificatesTable.Columns.Add("Дата выдачи", typeof(DateTime));
-            _certificatesTable.Columns.Add("Дата окончания", typeof(DateTime));
-            _certificatesTable.Columns.Add("Осталось дней", typeof(int));
-            _certificatesTable.Columns.Add("Комментарий", typeof(string));
-            _certificatesTable.Columns.Add("Telegram", typeof(string));
-            int total = 0;
-            int expired = 0;
-            int expiring = 0;
-
-            foreach (var cert in _certificateRepo.GetAll())
+            try
             {
-                total++;
-                if (cert.DaysLeft < 0)
+                _certificatesTable = new DataTable();
+                _certificatesTable.Columns.Add("Id", typeof(long));
+                _certificatesTable.Columns.Add("ФИО", typeof(string));
+                _certificatesTable.Columns.Add("Подразделение", typeof(string));
+                _certificatesTable.Columns.Add("Удостоверяющий центр", typeof(string));
+                _certificatesTable.Columns.Add("Тип сертификата", typeof(string));
+                _certificatesTable.Columns.Add("№ сертификата", typeof(string));
+                _certificatesTable.Columns.Add("Логин к хранилищу", typeof(string));
+                _certificatesTable.Columns.Add("Пароль к хранилищу", typeof(string));
+                _certificatesTable.Columns.Add("Пароль от ЭЦП", typeof(string));
+                _certificatesTable.Columns.Add("Дата выдачи", typeof(DateTime));
+                _certificatesTable.Columns.Add("Дата окончания", typeof(DateTime));
+                _certificatesTable.Columns.Add("Осталось дней", typeof(int));
+                _certificatesTable.Columns.Add("Статус", typeof(string));
+                _certificatesTable.Columns.Add("Комментарий", typeof(string));
+                _certificatesTable.Columns.Add("Telegram", typeof(string));
+
+                int total = 0;
+                foreach (var cert in _certificateRepo.GetAll())
                 {
-                    expired++;
-                }
-                else if (cert.DaysLeft <= DaysWarningThreshold)
-                {
-                    expiring++;
+                    total++;
+                    var row = _certificatesTable.NewRow();
+                    row["Id"] = cert.Id;
+                    row["ФИО"] = cert.FullName;
+                    row["Подразделение"] = cert.Department;
+                    row["Удостоверяющий центр"] = cert.Authority;
+                    row["Тип сертификата"] = cert.CertificateType;
+                    row["№ сертификата"] = cert.SerialNumber;
+                    row["Логин к хранилищу"] = cert.StoreLogin;
+                    row["Пароль к хранилищу"] = cert.StorePassword;
+                    row["Пароль от ЭЦП"] = cert.CertPassword;
+                    row["Дата выдачи"] = cert.IssueDate;
+                    row["Дата окончания"] = cert.ExpiryDate;
+                    row["Осталось дней"] = cert.DaysLeft;
+                    row["Статус"] = cert.Status;
+                    row["Комментарий"] = cert.Comment;
+                    row["Telegram"] = string.IsNullOrWhiteSpace(cert.TelegramUsername)
+                        ? ""
+                        : "@" + cert.TelegramUsername;
+                    _certificatesTable.Rows.Add(row);
                 }
 
-                var row = _certificatesTable.NewRow();
-                row["Id"] = cert.Id;
-                row["ФИО"] = cert.FullName;
-                row["Подразделение"] = cert.Department;
-                row["№ сертификата"] = cert.SerialNumber;
-                row["Логин к хранилищу"] = cert.StoreLogin;
-                row["Пароль к хранилищу"] = cert.StorePassword;
-                row["Пароль от ЭЦП"] = cert.CertPassword;
-                row["Дата выдачи"] = cert.IssueDate;
-                row["Дата окончания"] = cert.ExpiryDate;
-                row["Осталось дней"] = cert.DaysLeft;
-                row["Комментарий"] = cert.Comment;
-                row["Telegram"] = string.IsNullOrWhiteSpace(cert.TelegramUsername)
-                    ? ""
-                    : "@" + cert.TelegramUsername;
-                _certificatesTable.Rows.Add(row);
+                _gridCertificates.DataSource = _certificatesTable;
+                ApplyCertificateColumnSetup();
+                ApplyCertificateFilter();
+                UpdateCertificateStatus();
             }
-
-            _gridCertificates.DataSource = _certificatesTable;
-            ApplyCertificateColumnSetup();
-            UpdateCertificateStatus(total, expired, expiring);
+            catch (Exception ex)
+            {
+                ShowDbError(ex);
+            }
         }
 
         private const int DaysWarningThreshold = 30;
 
-        private void UpdateCertificateStatus(int total, int expired, int expiring)
+        private void UpdateCertificateStatus()
         {
-            if (_certStatusLabel == null)
+            if (_certStatusLabel == null || _certificatesTable == null)
             {
                 return;
+            }
+
+            int total = _certificatesTable.Rows.Count;
+            int expired = 0;
+            int expiring = 0;
+            foreach (DataRow row in _certificatesTable.Rows)
+            {
+                int days = row["Осталось дней"] == DBNull.Value ? 0 : Convert.ToInt32(row["Осталось дней"]);
+                if (days < 0)
+                {
+                    expired++;
+                }
+                else if (days <= DaysWarningThreshold)
+                {
+                    expiring++;
+                }
             }
 
             _certStatusLabel.Text =
@@ -234,38 +282,74 @@ namespace WindowsFormsApp1.Forms
                 $"Истекает в течение {DaysWarningThreshold} дней: {expiring}";
         }
 
-        private void CheckNow()
+        private void ApplyCertificateFilter()
         {
-            var expiring = new List<Certificate>();
-            foreach (var cert in _certificateRepo.GetAll())
+            if (_certificatesTable == null || _cmbFilter == null)
             {
-                if (cert.DaysLeft <= DaysWarningThreshold)
-                {
-                    expiring.Add(cert);
-                }
-            }
-
-            if (expiring.Count == 0)
-            {
-                MessageBox.Show(
-                    $"Сертификатов, истекающих в течение {DaysWarningThreshold} дней, не найдено.",
-                    "Проверка ЭЦП", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            var lines = new List<string>();
-            foreach (var cert in expiring)
+            var parts = new List<string>();
+            string search = _txtSearch?.Text.Trim() ?? "";
+            if (search.Length > 0)
             {
-                string when = cert.DaysLeft < 0
-                    ? $"просрочен на {-cert.DaysLeft} дн."
-                    : $"осталось {cert.DaysLeft} дн.";
-                lines.Add($"• {cert.FullName} — {cert.SerialNumber} ({when}, до {cert.ExpiryDate:dd.MM.yyyy})");
+                string safe = search.Replace("'", "''");
+                parts.Add($"([ФИО] LIKE '%{safe}%' OR [Подразделение] LIKE '%{safe}%' OR [№ сертификата] LIKE '%{safe}%')");
             }
 
-            MessageBox.Show(
-                $"Сертификаты, истекающие в течение {DaysWarningThreshold} дней " +
-                $"({expiring.Count}):\n\n" + string.Join("\n", lines),
-                "Проверка ЭЦП", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            switch (_cmbFilter.SelectedIndex)
+            {
+                case 1:
+                    parts.Add("[Осталось дней] >= 0 AND [Осталось дней] <= " + DaysWarningThreshold);
+                    break;
+                case 2:
+                    parts.Add("[Осталось дней] < 0");
+                    break;
+            }
+
+            _certificatesTable.DefaultView.RowFilter = string.Join(" AND ", parts);
+            _gridCertificates.Refresh();
+        }
+
+        private void CheckNow()
+        {
+            try
+            {
+                var expiring = new List<Certificate>();
+                foreach (var cert in _certificateRepo.GetAll())
+                {
+                    if (cert.DaysLeft <= DaysWarningThreshold)
+                    {
+                        expiring.Add(cert);
+                    }
+                }
+
+                if (expiring.Count == 0)
+                {
+                    MessageBox.Show(
+                        $"Сертификатов, истекающих в течение {DaysWarningThreshold} дней, не найдено.",
+                        "Проверка ЭЦП", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                var lines = new List<string>();
+                foreach (var cert in expiring)
+                {
+                    string when = cert.DaysLeft < 0
+                        ? $"просрочен на {-cert.DaysLeft} дн."
+                        : $"осталось {cert.DaysLeft} дн.";
+                    lines.Add($"• {cert.FullName} — {cert.SerialNumber} ({when}, до {cert.ExpiryDate:dd.MM.yyyy})");
+                }
+
+                MessageBox.Show(
+                    $"Сертификаты, истекающие в течение {DaysWarningThreshold} дней " +
+                    $"({expiring.Count}):\n\n" + string.Join("\n", lines),
+                    "Проверка ЭЦП", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                ShowDbError(ex);
+            }
         }
 
         private void OpenNotificationSettings()
@@ -320,6 +404,10 @@ namespace WindowsFormsApp1.Forms
             }
 
             _gridCertificates.Columns["Id"].Visible = false;
+            // УЦ и тип редактируются в форме и попадают в экспорт, но в таблице
+            // не показываются — иначе ключевой столбец «Осталось дней» уходит за край.
+            _gridCertificates.Columns["Удостоверяющий центр"].Visible = false;
+            _gridCertificates.Columns["Тип сертификата"].Visible = false;
             _gridCertificates.Columns["Дата выдачи"].DefaultCellStyle.Format = "dd.MM.yyyy";
             _gridCertificates.Columns["Дата окончания"].DefaultCellStyle.Format = "dd.MM.yyyy";
 
@@ -327,8 +415,8 @@ namespace WindowsFormsApp1.Forms
             string[] order =
             {
                 "ФИО", "Подразделение", "№ сертификата", "Дата выдачи",
-                "Дата окончания", "Осталось дней", "Telegram", "Комментарий",
-                "Логин к хранилищу", "Пароль к хранилищу", "Пароль от ЭЦП"
+                "Дата окончания", "Осталось дней", "Статус", "Telegram",
+                "Комментарий", "Логин к хранилищу", "Пароль к хранилищу", "Пароль от ЭЦП"
             };
             for (int i = 0; i < order.Length; i++)
             {
@@ -344,23 +432,58 @@ namespace WindowsFormsApp1.Forms
 
         private void CertificateCellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
         {
-            if (_gridCertificates.Columns[e.ColumnIndex].Name != "Осталось дней" || e.Value == null)
+            if (e.Value == null || e.ColumnIndex < 0)
             {
                 return;
             }
 
-            int days = Convert.ToInt32(e.Value);
-            if (days < 0)
+            string column = _gridCertificates.Columns[e.ColumnIndex].Name;
+
+            // Пароли не показываем открытым текстом.
+            if (column == "Пароль к хранилищу" || column == "Пароль от ЭЦП")
             {
-                e.CellStyle.ForeColor = Color.White;
-                e.CellStyle.BackColor = Color.Firebrick;
-                e.CellStyle.SelectionBackColor = Color.Firebrick;
+                string value = Convert.ToString(e.Value);
+                e.Value = string.IsNullOrEmpty(value) ? "" : "••••••••";
+                e.FormattingApplied = true;
+                return;
             }
-            else if (days <= 30)
+
+            if (column == "Осталось дней")
             {
-                e.CellStyle.ForeColor = Color.Black;
-                e.CellStyle.BackColor = Color.Khaki;
-                e.CellStyle.SelectionBackColor = Color.Khaki;
+                int days = Convert.ToInt32(e.Value);
+                if (days < 0)
+                {
+                    e.CellStyle.ForeColor = Color.White;
+                    e.CellStyle.BackColor = Color.Firebrick;
+                    e.CellStyle.SelectionBackColor = Color.Firebrick;
+                }
+                else if (days <= DaysWarningThreshold)
+                {
+                    e.CellStyle.ForeColor = Color.Black;
+                    e.CellStyle.BackColor = Color.Khaki;
+                    e.CellStyle.SelectionBackColor = Color.Khaki;
+                }
+                return;
+            }
+
+            if (column == "Статус")
+            {
+                string status = Convert.ToString(e.Value);
+                if (status == "Просрочен")
+                {
+                    e.CellStyle.ForeColor = Color.Firebrick;
+                    e.CellStyle.SelectionForeColor = Color.Firebrick;
+                }
+                else if (status == "Истекает")
+                {
+                    e.CellStyle.ForeColor = Color.DarkOrange;
+                    e.CellStyle.SelectionForeColor = Color.DarkOrange;
+                }
+                else
+                {
+                    e.CellStyle.ForeColor = Color.ForestGreen;
+                    e.CellStyle.SelectionForeColor = Color.ForestGreen;
+                }
             }
         }
 
@@ -381,57 +504,84 @@ namespace WindowsFormsApp1.Forms
 
         private void AddCertificate()
         {
-            using var dialog = new CertificateEditForm(null, _certificateRepo.GetDepartments());
-            if (dialog.ShowDialog(this) != DialogResult.OK)
+            try
             {
-                return;
-            }
+                using var dialog = new CertificateEditForm(null,
+                    _certificateRepo.GetDepartments(),
+                    _certificateRepo.GetAuthorities(),
+                    _certificateRepo.GetCertificateTypes());
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
 
-            _certificateRepo.Add(dialog.Result);
-            LoadCertificates();
+                _certificateRepo.Add(dialog.Result);
+                LoadCertificates();
+            }
+            catch (Exception ex)
+            {
+                ShowDbError(ex);
+            }
         }
 
         private void EditCertificate()
         {
-            var selected = GetSelectedCertificate();
-            if (selected == null)
+            try
             {
-                MessageBox.Show("Выберите запись для редактирования.", "Реестр ЭЦП",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
+                var selected = GetSelectedCertificate();
+                if (selected == null)
+                {
+                    MessageBox.Show("Выберите запись для редактирования.", "Реестр ЭЦП",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
 
-            using var dialog = new CertificateEditForm(selected, _certificateRepo.GetDepartments());
-            if (dialog.ShowDialog(this) != DialogResult.OK)
+                using var dialog = new CertificateEditForm(selected,
+                    _certificateRepo.GetDepartments(),
+                    _certificateRepo.GetAuthorities(),
+                    _certificateRepo.GetCertificateTypes());
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                _certificateRepo.Update(dialog.Result);
+                LoadCertificates();
+            }
+            catch (Exception ex)
             {
-                return;
+                ShowDbError(ex);
             }
-
-            _certificateRepo.Update(dialog.Result);
-            LoadCertificates();
         }
 
         private void DeleteCertificate()
         {
-            var selected = GetSelectedCertificate();
-            if (selected == null)
+            try
             {
-                MessageBox.Show("Выберите запись для удаления.", "Реестр ЭЦП",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
+                var selected = GetSelectedCertificate();
+                if (selected == null)
+                {
+                    MessageBox.Show("Выберите запись для удаления.", "Реестр ЭЦП",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                var confirm = MessageBox.Show(
+                    $"Удалить запись для «{selected.FullName}» ({selected.SerialNumber})?",
+                    "Подтверждение удаления", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+                if (confirm != DialogResult.Yes)
+                {
+                    return;
+                }
+
+                _certificateRepo.Delete(selected.Id);
+                LoadCertificates();
             }
-
-            var confirm = MessageBox.Show(
-                $"Удалить запись для «{selected.FullName}» ({selected.SerialNumber})?",
-                "Подтверждение удаления", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-
-            if (confirm != DialogResult.Yes)
+            catch (Exception ex)
             {
-                return;
+                ShowDbError(ex);
             }
-
-            _certificateRepo.Delete(selected.Id);
-            LoadCertificates();
         }
 
         private void ExportCertificates()
@@ -443,15 +593,41 @@ namespace WindowsFormsApp1.Forms
                 return;
             }
 
-            var exportTable = _certificatesTable.Copy();
-            exportTable.Columns.Remove("Id");
-            exportTable.Columns["Дата выдачи"].ColumnName = "Дата выдачи";
-            exportTable.Columns["Дата окончания"].ColumnName = "Дата окончания";
-            var path = ExcelExporter.Export(exportTable, "Реестр_ЭЦП");
-            if (path != null)
+            try
             {
-                MessageBox.Show($"Данные выгружены в файл:\n{path}", "Экспорт завершён",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                var exportTable = _certificatesTable.Copy();
+                exportTable.Columns.Remove("Id");
+
+                // Пароли не выгружаем открытым текстом.
+                MaskColumn(exportTable, "Пароль к хранилищу");
+                MaskColumn(exportTable, "Пароль от ЭЦП");
+
+                var path = ExcelExporter.Export(exportTable, "Реестр_ЭЦП");
+                if (path != null)
+                {
+                    MessageBox.Show($"Данные выгружены в файл:\n{path}", "Экспорт завершён",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowDbError(ex);
+            }
+        }
+
+        private static void MaskColumn(DataTable table, string columnName)
+        {
+            if (!table.Columns.Contains(columnName))
+            {
+                return;
+            }
+
+            foreach (DataRow row in table.Rows)
+            {
+                if (!string.IsNullOrEmpty(Convert.ToString(row[columnName])))
+                {
+                    row[columnName] = "••••••••";
+                }
             }
         }
 
@@ -459,29 +635,42 @@ namespace WindowsFormsApp1.Forms
 
         private void LoadRequests()
         {
-            _requestsTable = new DataTable();
-            _requestsTable.Columns.Add("Id", typeof(long));
-            _requestsTable.Columns.Add("ФИО сотрудника", typeof(string));
-            _requestsTable.Columns.Add("Номер заявки", typeof(string));
-            _requestsTable.Columns.Add("Тип получения", typeof(string));
-            _requestsTable.Columns.Add("Дата создания", typeof(DateTime));
-
-            foreach (var request in _requestRepo.GetAll())
+            try
             {
-                var row = _requestsTable.NewRow();
-                row["Id"] = request.Id;
-                row["ФИО сотрудника"] = request.FullName;
-                row["Номер заявки"] = request.RequestNumber;
-                row["Тип получения"] = request.RequestType;
-                row["Дата создания"] = request.CreatedDate;
-                _requestsTable.Rows.Add(row);
+                _requestsTable = new DataTable();
+                _requestsTable.Columns.Add("Id", typeof(long));
+                _requestsTable.Columns.Add("ФИО сотрудника", typeof(string));
+                _requestsTable.Columns.Add("Номер заявки", typeof(string));
+                _requestsTable.Columns.Add("Тип получения", typeof(string));
+                _requestsTable.Columns.Add("Статус", typeof(string));
+                _requestsTable.Columns.Add("Дата создания", typeof(DateTime));
+
+                foreach (var request in _requestRepo.GetAll())
+                {
+                    var row = _requestsTable.NewRow();
+                    row["Id"] = request.Id;
+                    row["ФИО сотрудника"] = request.FullName;
+                    row["Номер заявки"] = request.RequestNumber;
+                    row["Тип получения"] = request.RequestType;
+                    row["Статус"] = request.Status;
+                    row["Дата создания"] = request.CreatedDate;
+                    _requestsTable.Rows.Add(row);
+                }
+
+                _gridRequests.DataSource = _requestsTable;
+                if (_gridRequests.Columns.Count > 0)
+                {
+                    _gridRequests.Columns["Id"].Visible = false;
+                    _gridRequests.Columns["Дата создания"].DefaultCellStyle.Format = "dd.MM.yyyy";
+                }
+                if (_requestStatusLabel != null)
+                {
+                    _requestStatusLabel.Text = $"Всего заявок: {_requestsTable.Rows.Count}";
+                }
             }
-
-            _gridRequests.DataSource = _requestsTable;
-            if (_gridRequests.Columns.Count > 0)
+            catch (Exception ex)
             {
-                _gridRequests.Columns["Id"].Visible = false;
-                _gridRequests.Columns["Дата создания"].DefaultCellStyle.Format = "dd.MM.yyyy";
+                ShowDbError(ex);
             }
         }
 
@@ -499,77 +688,99 @@ namespace WindowsFormsApp1.Forms
                 FullName = Convert.ToString(row["ФИО сотрудника"]),
                 RequestNumber = Convert.ToString(row["Номер заявки"]),
                 RequestType = Convert.ToString(row["Тип получения"]),
+                Status = Convert.ToString(row["Статус"]),
                 CreatedDate = row["Дата создания"] == DBNull.Value ? DateTime.Today : Convert.ToDateTime(row["Дата создания"])
             };
         }
 
         private void AddRequest()
         {
-            using var dialog = new RequestEditForm(null);
-            if (dialog.ShowDialog(this) != DialogResult.OK)
+            try
             {
-                return;
-            }
+                using var dialog = new RequestEditForm(null, _requestRepo.GetStatuses());
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
 
-            if (_requestRepo.NumberExists(dialog.Result.RequestNumber))
+                if (_requestRepo.NumberExists(dialog.Result.RequestNumber))
+                {
+                    MessageBox.Show("Заявка с таким номером уже существует.", "Проверка данных",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                _requestRepo.Add(dialog.Result);
+                LoadRequests();
+            }
+            catch (Exception ex)
             {
-                MessageBox.Show("Заявка с таким номером уже существует.", "Проверка данных",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                ShowDbError(ex);
             }
-
-            _requestRepo.Add(dialog.Result);
-            LoadRequests();
         }
 
         private void EditRequest()
         {
-            var selected = GetSelectedRequest();
-            if (selected == null)
+            try
             {
-                MessageBox.Show("Выберите заявку для редактирования.", "Заявки",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
+                var selected = GetSelectedRequest();
+                if (selected == null)
+                {
+                    MessageBox.Show("Выберите заявку для редактирования.", "Заявки",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
 
-            using var dialog = new RequestEditForm(selected);
-            if (dialog.ShowDialog(this) != DialogResult.OK)
+                using var dialog = new RequestEditForm(selected, _requestRepo.GetStatuses());
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                if (_requestRepo.NumberExists(dialog.Result.RequestNumber, dialog.Result.Id))
+                {
+                    MessageBox.Show("Заявка с таким номером уже существует.", "Проверка данных",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                _requestRepo.Update(dialog.Result);
+                LoadRequests();
+            }
+            catch (Exception ex)
             {
-                return;
+                ShowDbError(ex);
             }
-
-            if (_requestRepo.NumberExists(dialog.Result.RequestNumber, dialog.Result.Id))
-            {
-                MessageBox.Show("Заявка с таким номером уже существует.", "Проверка данных",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            _requestRepo.Update(dialog.Result);
-            LoadRequests();
         }
 
         private void DeleteRequest()
         {
-            var selected = GetSelectedRequest();
-            if (selected == null)
+            try
             {
-                MessageBox.Show("Выберите заявку для удаления.", "Заявки",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
+                var selected = GetSelectedRequest();
+                if (selected == null)
+                {
+                    MessageBox.Show("Выберите заявку для удаления.", "Заявки",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                var confirm = MessageBox.Show(
+                    $"Удалить заявку №{selected.RequestNumber} для «{selected.FullName}»?",
+                    "Подтверждение удаления", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+                if (confirm != DialogResult.Yes)
+                {
+                    return;
+                }
+
+                _requestRepo.Delete(selected.Id);
+                LoadRequests();
             }
-
-            var confirm = MessageBox.Show(
-                $"Удалить заявку №{selected.RequestNumber} для «{selected.FullName}»?",
-                "Подтверждение удаления", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-
-            if (confirm != DialogResult.Yes)
+            catch (Exception ex)
             {
-                return;
+                ShowDbError(ex);
             }
-
-            _requestRepo.Delete(selected.Id);
-            LoadRequests();
         }
 
         private void ExportRequests()
@@ -581,14 +792,28 @@ namespace WindowsFormsApp1.Forms
                 return;
             }
 
-            var exportTable = _requestsTable.Copy();
-            exportTable.Columns.Remove("Id");
-            var path = ExcelExporter.Export(exportTable, "Заявки_ЭЦП");
-            if (path != null)
+            try
             {
-                MessageBox.Show($"Данные выгружены в файл:\n{path}", "Экспорт завершён",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                var exportTable = _requestsTable.Copy();
+                exportTable.Columns.Remove("Id");
+                var path = ExcelExporter.Export(exportTable, "Заявки_ЭЦП");
+                if (path != null)
+                {
+                    MessageBox.Show($"Данные выгружены в файл:\n{path}", "Экспорт завершён",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
             }
+            catch (Exception ex)
+            {
+                ShowDbError(ex);
+            }
+        }
+
+        private static void ShowDbError(Exception ex)
+        {
+            MessageBox.Show(
+                "Не удалось выполнить операцию.\n\n" + ex.Message,
+                "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }
